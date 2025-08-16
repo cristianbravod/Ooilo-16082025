@@ -1,15 +1,17 @@
 // FrontEnd/components/Pedidos.js - VERSIÓN FINAL CON TODAS LAS CORRECCIONES
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal,
   ActivityIndicator, RefreshControl, Image, TextInput, Platform
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import ApiService from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Pedidos() {
   const { user } = useAuth();
+  const isInitialMount = useRef(true);
   
   const [menu, setMenu] = useState([]);
   const [platosEspeciales, setPlatosEspeciales] = useState([]);
@@ -49,8 +51,40 @@ export default function Pedidos() {
   }, []);
 
   useEffect(() => {
+    const cargarPedidosGuardados = async () => {
+      try {
+        const jsonValue = await AsyncStorage.getItem('@pedidosMesas');
+        if (jsonValue != null) {
+          setPedidosMesas(JSON.parse(jsonValue));
+          console.log('✅ Pedidos recuperados de AsyncStorage');
+        }
+      } catch (e) {
+        console.error('❌ Error al cargar pedidos desde AsyncStorage', e);
+      }
+    };
+    cargarPedidosGuardados();
+  }, []);
+
+  useEffect(() => {
     cargarDatosIniciales();
   }, [cargarDatosIniciales]);
+
+  // Guardar pedidos en AsyncStorage cuando cambian
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    } else {
+      const guardarPedidos = async () => {
+        try {
+          const jsonValue = JSON.stringify(pedidosMesas);
+          await AsyncStorage.setItem('@pedidosMesas', jsonValue);
+        } catch (e) {
+          console.error('❌ Error guardando pedidos en AsyncStorage:', e);
+        }
+      };
+      guardarPedidos();
+    }
+  }, [pedidosMesas]);
 
   const formatearPrecio = useCallback((precio) => {
     const numPrecio = typeof precio === 'string' ? parseFloat(precio) : precio;
