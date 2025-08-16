@@ -1,0 +1,197 @@
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restaurante - Sistema de Gestión</title>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container">
+        <div class="login-card">
+            <div class="login-logo">👨‍🍳</div>
+            <h1 class="login-title">Sistema Cocina</h1>
+            <p class="login-subtitle">Gestión de pedidos restaurante</p>
+            
+            <form id="login-form">
+                <div class="form-group">
+                    <label class="form-label" for="email">Email</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        class="form-input" 
+                        required 
+                        autocomplete="email"
+                        placeholder="usuario@restaurante.com"
+                    >
+                    <div class="error-message" id="email-error"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="password">Contraseña</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        class="form-input" 
+                        required 
+                        autocomplete="current-password"
+                        placeholder="••••••••"
+                    >
+                    <div class="error-message" id="password-error"></div>
+                </div>
+                
+                <div class="role-selector">
+                    <label class="form-label">Tipo de acceso</label>
+                    <div class="role-options">
+                        <div class="role-option selected" data-role="cocina">
+                            👨‍🍳 Cocina
+                        </div>
+                        <div class="role-option" data-role="admin">
+                            👥 Admin
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="login-btn" id="login-btn">
+                    <span id="login-btn-text">Iniciar Sesión</span>
+                </button>
+                
+                <div class="error-message" id="login-error"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="app-container">
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span>🍽️</span>
+                    <span id="app-title">Sistema Cocina</span>
+                </div>
+                
+                <nav class="nav-tabs">
+                    <button class="nav-tab active" onclick="showSection('dashboard')" id="dashboard-tab">
+                        📊 Dashboard
+                    </button>
+                    <button class="nav-tab" onclick="showSection('kitchen')" id="kitchen-tab">
+                        👨‍🍳 Cocina
+                    </button>
+                    <button class="nav-tab" onclick="showSection('admin')" id="admin-tab">
+                        👥 Administración
+                    </button>
+                    <button class="nav-tab" onclick="showSection('tables')" id="tables-tab">
+                        🪑 Mesas
+                    </button>
+                </nav>
+
+                <div class="user-info">
+                    <div class="user-details">
+                        <div class="user-name" id="user-name">Usuario</div>
+                        <div class="user-role" id="user-role">Rol</div>
+                    </div>
+                    <div class="status-indicator">
+                        <div class="status-dot" id="connection-dot"></div>
+                        <span id="connection-status">Conectado</span>
+                    </div>
+                    <button class="logout-btn" onclick="logout()">
+                        🚪 <span>Salir</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-container">
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="content-section active">
+                <div class="dashboard-stats">
+                    <div class="stat-card danger">
+                        <div class="icon">⚠️</div>
+                        <div class="stat-number" id="pending-orders">0</div>
+                        <div class="stat-label">Pedidos Pendientes</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="icon">🔥</div>
+                        <div class="stat-number" id="preparing-orders">0</div>
+                        <div class="stat-label">En Preparación</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="icon">✅</div>
+                        <div class="stat-number" id="ready-orders">0</div>
+                        <div class="stat-label">Listos para Entregar</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon">💰</div>
+                        <div class="stat-number" id="total-sales">$0</div>
+                        <div class="stat-label">Ventas del Día</div>
+                    </div>
+                </div>
+
+                <h2>📈 Resumen General</h2>
+                <div id="dashboard-orders" class="orders-grid">
+                    <!-- Las órdenes se cargarán aquí dinámicamente -->
+                </div>
+            </section>
+
+            <!-- Kitchen Section -->
+            <section id="kitchen" class="content-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                    <h2>👨‍🍳 Panel de Cocina</h2>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <span style="font-weight: bold;">Auto-refresh:</span>
+                        <button class="btn btn-success" id="auto-refresh-btn" onclick="toggleAutoRefresh()">
+                            ✅ Activo
+                        </button>
+                        <button class="btn btn-primary" onclick="refreshKitchenOrders()">
+                            🔄 Actualizar
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="kitchen-orders" class="orders-grid">
+                    <!-- Las órdenes de cocina se cargarán aquí dinámicamente -->
+                </div>
+            </section>
+
+            <!-- Admin Section -->
+            <section id="admin" class="content-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                    <h2>👥 Panel de Administración</h2>
+                    <button class="btn btn-primary" onclick="refreshOrders()">
+                        🔄 Actualizar
+                    </button>
+                </div>
+                
+                <div id="admin-orders" class="orders-grid">
+                    <!-- Las órdenes se cargarán aquí dinámicamente -->
+                </div>
+            </section>
+
+            <!-- Tables Section -->
+            <section id="tables" class="content-section">
+                <h2>🪑 Gestión de Mesas</h2>
+                <div id="tables-grid" class="tables-grid">
+                    <!-- Las mesas se cargarán aquí dinámicamente -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Modal de Detalles -->
+    <div id="order-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modal-title">Detalles del Pedido</h3>
+                <button class="modal-close" onclick="closeOrderModal()">×</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Contenido del modal se carga dinámicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Template -->
+    <div id="notification" class="notification">
+        <span id="notification-message"></span>
+    </div>
+</body>
+</html>
