@@ -20,7 +20,6 @@ export default function Pedidos() {
   
   const [mesaActual, setMesaActual] = useState(null);
   const [pedidosMesas, setPedidosMesas] = useState({});
-  const [productosTemporales, setProductosTemporales] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   
   const [refreshing, setRefreshing] = useState(false);
