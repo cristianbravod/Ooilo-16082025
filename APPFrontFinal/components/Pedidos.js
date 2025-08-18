@@ -12,16 +12,16 @@ import { useAuth } from '../contexts/AuthContext';
 export default function Pedidos() {
   const { user } = useAuth();
   const isInitialMount = useRef(true);
-
+  
   const [menu, setMenu] = useState([]);
   const [platosEspeciales, setPlatosEspeciales] = useState([]);
   const [categoriasDisponibles, setCategoriasDisponibles] = useState([]);
   const [mesasDisponibles, setMesasDisponibles] = useState([]);
-
+  
   const [mesaActual, setMesaActual] = useState(null);
   const [pedidosMesas, setPedidosMesas] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
-
+  
   const [refreshing, setRefreshing] = useState(false);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [mostrarSelectorMesa, setMostrarSelectorMesa] = useState(false);
@@ -356,12 +356,19 @@ export default function Pedidos() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Seleccionar Mesa</Text>
             <ScrollView>
-              {mesasDisponibles.map(mesa => (
-                <TouchableOpacity key={mesa.id} style={styles.mesaItem} onPress={() => { setMesaActual(mesa); setMostrarSelectorMesa(false); }}>
-                  <Text style={styles.mesaNombre}>{mesa.nombre}</Text>
-                  <Ionicons name={mesa.estado === 'disponible' ? "checkmark-circle" : "time-outline"} size={24} color={mesa.estado === 'disponible' ? "#4CAF50" : "#FF9800"} />		  
-                </TouchableOpacity>
-              ))}
+              {mesasDisponibles.map(mesa => {
+                const isMesaOcupada = pedidosMesas[mesa.id] && (pedidosMesas[mesa.id].productos?.length > 0 || pedidosMesas[mesa.id].productosNuevos?.length > 0);
+                return (
+                  <TouchableOpacity key={mesa.id} style={styles.mesaItem} onPress={() => { setMesaActual(mesa); setMostrarSelectorMesa(false); }}>
+                    <Text style={styles.mesaNombre}>{mesa.nombre}</Text>
+                    <Ionicons 
+                      name={isMesaOcupada ? "close-circle" : "checkmark-circle"} 
+                      size={24} 
+                      color={isMesaOcupada ? "#FF9800" : "#4CAF50"} 
+                    />
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
         </View>
@@ -386,8 +393,8 @@ const styles = StyleSheet.create({
     productCard: { width: '48%', backgroundColor: 'white', borderRadius: 12, padding: 12, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: {width: 0, height: 2} },
     productCardPlaceholder: { width: '48%' },
     productImage: { width: '100%', height: 100, borderRadius: 8, marginBottom: 8 },
-    productName: { fontSize: 14, fontWeight: '600', textAlign: 'center', minHeight: 34 },
-    productPrice: { fontSize: 16, fontWeight: 'bold', color: '#d32f2f', marginTop: 4 },
+    productName: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+    productPrice: { fontSize: 16, fontWeight: 'bold', color: '#d32f2f', marginTop: 2 },
     resumenCard: { backgroundColor: 'white', borderRadius: 12, margin: 16, padding: 16, marginTop: 20, borderWidth: 1, borderColor: '#e0e0e0' },
     pedidoMesaTitulo: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
     pedidoItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderColor: '#f0f0f0' },
