@@ -1,26 +1,27 @@
 // FrontEnd/components/Pedidos.js - VERSIÓN FINAL CON TODAS LAS CORRECCIONES
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal,
   ActivityIndicator, RefreshControl, Image, TextInput, Platform
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import ApiService from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Pedidos() {
   const { user } = useAuth();
-  
+  const isInitialMount = useRef(true);
+
   const [menu, setMenu] = useState([]);
   const [platosEspeciales, setPlatosEspeciales] = useState([]);
   const [categoriasDisponibles, setCategoriasDisponibles] = useState([]);
   const [mesasDisponibles, setMesasDisponibles] = useState([]);
-  
+
   const [mesaActual, setMesaActual] = useState(null);
   const [pedidosMesas, setPedidosMesas] = useState({});
-  const [productosTemporales, setProductosTemporales] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   const [refreshing, setRefreshing] = useState(false);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [mostrarSelectorMesa, setMostrarSelectorMesa] = useState(false);
@@ -49,8 +50,40 @@ export default function Pedidos() {
   }, []);
 
   useEffect(() => {
+    const cargarPedidosGuardados = async () => {
+      try {
+        const jsonValue = await AsyncStorage.getItem('@pedidosMesas');
+        if (jsonValue != null) {
+          setPedidosMesas(JSON.parse(jsonValue));
+          console.log('✅ Pedidos recuperados de AsyncStorage');
+        }
+      } catch (e) {
+        console.error('❌ Error al cargar pedidos desde AsyncStorage', e);
+      }
+    };
+    cargarPedidosGuardados();
+  }, []);
+
+  useEffect(() => {
     cargarDatosIniciales();
   }, [cargarDatosIniciales]);
+
+  // Guardar pedidos en AsyncStorage cuando cambian
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    } else {
+      const guardarPedidos = async () => {
+        try {
+          const jsonValue = JSON.stringify(pedidosMesas);
+          await AsyncStorage.setItem('@pedidosMesas', jsonValue);
+        } catch (e) {
+          console.error('❌ Error guardando pedidos en AsyncStorage:', e);
+        }
+      };
+      guardarPedidos();
+    }
+  }, [pedidosMesas]);
 
   const formatearPrecio = useCallback((precio) => {
     const numPrecio = typeof precio === 'string' ? parseFloat(precio) : precio;
@@ -59,68 +92,102 @@ export default function Pedidos() {
   }, []);
 
   const getPedidoMesaActual = useCallback(() => {
-    if (!mesaActual) return { productos: [], total: 0 };
-    const pedidoGuardado = pedidosMesas[mesaActual.id] || { productos: [] };
-    const todosProductos = [...(pedidoGuardado.productos || []), ...productosTemporales];
+    if (!mesaActual) return { productos: [], productosNuevos: [], total: 0 };
+    const pedidoGuardado = pedidosMesas[mesaActual.id] || { productos: [], productosNuevos: [] };
+    const todosProductos = [...(pedidoGuardado.productos || []), ...(pedidoGuardado.productosNuevos || [])];
     const total = todosProductos.reduce((sum, item) => {
         const precio = typeof item.precio === 'string' ? parseFloat(item.precio) : item.precio;
         return sum + (precio * item.cantidad);
     }, 0);
     return { ...pedidoGuardado, productos: todosProductos, total };
-  }, [mesaActual, pedidosMesas, productosTemporales]);
+  }, [mesaActual, pedidosMesas]);
 
   const agregarProducto = useCallback((item, esEspecial) => {
     if (!mesaActual) {
       Alert.alert('Atención', 'Por favor, selecciona una mesa antes de agregar productos.');
       return;
     }
-    setProductosTemporales(prev => {
-      const existente = prev.find(p => p.id === item.id && p.es_especial === esEspecial);
+    setPedidosMesas(prev => {
+      const pedidoActual = prev[mesaActual.id] || { productos: [], productosNuevos: [] };
+      const productosNuevos = pedidoActual.productosNuevos || [];
+      const existente = productosNuevos.find(p => p.id === item.id && p.es_especial === esEspecial);
+      
+      let productosNuevosActualizados;
       if (existente) {
-        return prev.map(p => p.id === item.id && p.es_especial === esEspecial ? { ...p, cantidad: p.cantidad + 1 } : p);
+        productosNuevosActualizados = productosNuevos.map(p => p.id === item.id && p.es_especial === esEspecial ? { ...p, cantidad: p.cantidad + 1 } : p);
+      } else {
+        productosNuevosActualizados = [...productosNuevos, { ...item, cantidad: 1, es_especial: esEspecial }];
       }
-      return [...prev, { ...item, cantidad: 1, es_especial: esEspecial }];
+
+      return {
+        ...prev,
+        [mesaActual.id]: {
+          ...pedidoActual,
+          productosNuevos: productosNuevosActualizados
+        }
+      };
     });
   }, [mesaActual]);
   
   const eliminarDelPedido = (itemId, esEspecial) => {
-    const filterFn = p => !(p.id === itemId && p.es_especial === esEspecial);
-    setProductosTemporales(prev => prev.filter(filterFn));
-    if (pedidosMesas[mesaActual?.id]) {
-      setPedidosMesas(prev => ({
+    if (!mesaActual) return;
+    
+    setPedidosMesas(prev => {
+      const pedidoActual = prev[mesaActual.id];
+      if (!pedidoActual) return prev;
+
+      const productosNuevosActualizados = (pedidoActual.productosNuevos || []).filter(p => !(p.id === itemId && p.es_especial === esEspecial));
+      const productosEnviadosActualizados = (pedidoActual.productos || []).filter(p => !(p.id === itemId && p.es_especial === esEspecial));
+
+      return {
         ...prev,
-        [mesaActual.id]: { ...prev[mesaActual.id], productos: prev[mesaActual.id].productos.filter(filterFn) }
-      }));
-    }
+        [mesaActual.id]: {
+          ...pedidoActual,
+          productos: productosEnviadosActualizados,
+          productosNuevos: productosNuevosActualizados
+        }
+      };
+    });
   };
 
   const cambiarCantidadPedido = useCallback((itemId, esEspecial, nuevaCantidad) => {
+    if (!mesaActual) return;
+
     if (nuevaCantidad < 1) {
       eliminarDelPedido(itemId, esEspecial);
       return;
     }
-    const updateList = list => list.map(p => (p.id === itemId && p.es_especial === esEspecial) ? { ...p, cantidad: nuevaCantidad } : p);
+    
+    setPedidosMesas(prev => {
+      const pedidoActual = prev[mesaActual.id];
+      if (!pedidoActual) return prev;
 
-    if (productosTemporales.some(p => p.id === itemId && p.es_especial === esEspecial)) {
-        setProductosTemporales(updateList);
-    } else if (pedidosMesas[mesaActual?.id]?.productos.some(p => p.id === itemId && p.es_especial === esEspecial)) {
-        setPedidosMesas(prev => ({
-            ...prev,
-            [mesaActual.id]: { ...prev[mesaActual.id], productos: updateList(prev[mesaActual.id].productos) }
-        }));
-    }
-  }, [mesaActual, productosTemporales, pedidosMesas, eliminarDelPedido]);
+      const updateList = (list) => list.map(p => (p.id === itemId && p.es_especial === esEspecial) ? { ...p, cantidad: nuevaCantidad } : p);
+
+      const enNuevos = (pedidoActual.productosNuevos || []).some(p => p.id === itemId && p.es_especial === esEspecial);
+
+      return {
+        ...prev,
+        [mesaActual.id]: {
+          ...pedidoActual,
+          productosNuevos: enNuevos ? updateList(pedidoActual.productosNuevos) : pedidoActual.productosNuevos,
+          productos: !enNuevos ? updateList(pedidoActual.productos) : pedidoActual.productos,
+        }
+      };
+    });
+  }, [mesaActual]);
 
   const enviarPedidoACocina = useCallback(async () => {
-    if (productosTemporales.length === 0) return Alert.alert('Info', 'No hay productos nuevos para enviar a cocina.');
     if (!mesaActual) return;
+    const productosNuevos = pedidosMesas[mesaActual.id]?.productosNuevos || [];
+    if (productosNuevos.length === 0) return Alert.alert('Info', 'No hay productos nuevos para enviar a cocina.');
     
     setEnviandoPedido(true);
     try {
       const pedidoParaEnviar = {
         mesa: mesaActual.nombre,
-        items: productosTemporales.map(p => ({ ...p, menu_item_id: p.id, precio: parseFloat(p.precio) })),
-        total: productosTemporales.reduce((sum, item) => sum + (parseFloat(item.precio) * item.cantidad), 0),
+        items: productosNuevos.map(p => ({ ...p, menu_item_id: p.id, precio: parseFloat(p.precio) })),
+        total: productosNuevos.reduce((sum, item) => sum + (parseFloat(item.precio) * item.cantidad), 0),
         cliente: `Mesa ${mesaActual.nombre}`,
         observaciones: `Pedido por ${user?.nombre || 'sistema'}`
       };
@@ -128,17 +195,17 @@ export default function Pedidos() {
       await ApiService.createQuickOrder(pedidoParaEnviar);
       
       setPedidosMesas(prev => {
-        const pedidoAnterior = prev[mesaActual.id] || { productos: [] };
+        const pedidoAnterior = prev[mesaActual.id];
         return {
           ...prev,
           [mesaActual.id]: {
             ...pedidoAnterior,
-            productos: [...pedidoAnterior.productos, ...productosTemporales],
+            productos: [...(pedidoAnterior.productos || []), ...productosNuevos],
+            productosNuevos: [],
             estado: 'enviado',
           }
         };
       });
-      setProductosTemporales([]);
       Alert.alert('Éxito', `Nuevos productos enviados a cocina para ${mesaActual.nombre}.`);
     } catch (error) {
       console.error('❌ Error enviando pedido adicional:', error);
@@ -146,7 +213,7 @@ export default function Pedidos() {
     } finally {
       setEnviandoPedido(false);
     }
-  }, [productosTemporales, mesaActual, user]);
+  }, [pedidosMesas, mesaActual, user]);
   
   const cerrarMesa = useCallback(() => {
     if (!mesaActual) return;
@@ -164,7 +231,6 @@ export default function Pedidos() {
                 delete newPedidos[mesaActual.id];
                 return newPedidos;
             });
-            setProductosTemporales([]);
             setMesaActual(null);
             Alert.alert('Mesa Cerrada', `${mesaActual.nombre} ha sido cerrada.`);
         }}
@@ -190,10 +256,9 @@ export default function Pedidos() {
     }
     const especialesFiltrados = filtrar(platosEspeciales.filter(p => p && p.nombre && p.disponible !== false));
     return { menuFiltrado, especialesFiltrados };
-  }, [searchQuery, menu, platosEspeciales, categoriasDisponibles]); // ✅ CORREGIDO: Usar platosEspeciales en lugar de platosEspecialesLocal
+  }, [searchQuery, menu, platosEspeciales, categoriasDisponibles]);
   
   const pedidoActual = getPedidoMesaActual();
-  const productosEnviadosIds = new Set((pedidosMesas[mesaActual?.id]?.productos || []).map(p => `${p.id}-${p.es_especial}`));
 
   const renderProductGrid = (productos, esEspecial = false) => {
     if (!productos || productos.length === 0) return null;
@@ -217,17 +282,17 @@ export default function Pedidos() {
 
   const renderPedidoYResumen = () => {
     if (!mesaActual || pedidoActual.productos.length === 0) return null;
+    const productosNuevos = pedidosMesas[mesaActual.id]?.productosNuevos || [];
 
     return (
         <View style={styles.resumenCard}>
             <Text style={styles.pedidoMesaTitulo}>Pedido de {mesaActual.nombre}</Text>
             {pedidoActual.productos.map(item => {
-                const esTemporal = productosTemporales.some(p => p.id === item.id && p.es_especial === item.es_especial);
-                const haSidoEnviado = !esTemporal;
+                const esNuevo = (pedidosMesas[mesaActual.id]?.productosNuevos || []).some(p => p.id === item.id && p.es_especial === item.es_especial);
                 return (
                     <View key={`${item.id}-${item.es_especial}`} style={styles.pedidoItem}>
-                        <Text style={[styles.pedidoNombre, haSidoEnviado && styles.itemEnviado]} numberOfLines={1}>
-                            {haSidoEnviado && "🧾 "}{item.nombre}
+                        <Text style={[styles.pedidoNombre, !esNuevo && styles.itemEnviado]} numberOfLines={1}>
+                            {!esNuevo && "🧾 "}{item.nombre}
                         </Text>
                         <View style={styles.pedidoControles}>
                             <TouchableOpacity onPress={() => cambiarCantidadPedido(item.id, item.es_especial, item.cantidad - 1)}><Ionicons name="remove-circle-outline" size={28} color="#FF9800" /></TouchableOpacity>
@@ -241,8 +306,8 @@ export default function Pedidos() {
             <View style={styles.resumenTotal}>
               <Text style={styles.totalText}>Total: {formatearPrecio(pedidoActual.total)}</Text>
             </View>
-            <TouchableOpacity style={[styles.actionButton, styles.enviarButton, productosTemporales.length === 0 && styles.buttonDisabled]} onPress={enviarPedidoACocina} disabled={enviandoPedido || productosTemporales.length === 0}>
-              {enviandoPedido ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>Enviar a Cocina ({productosTemporales.length})</Text>}
+            <TouchableOpacity style={[styles.actionButton, styles.enviarButton, productosNuevos.length === 0 && styles.buttonDisabled]} onPress={enviarPedidoACocina} disabled={enviandoPedido || productosNuevos.length === 0}>
+              {enviandoPedido ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>Enviar a Cocina ({productosNuevos.length})</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={[styles.actionButton, styles.cerrarButton]} onPress={cerrarMesa}>
                 <Text style={styles.actionButtonText}>Cerrar Mesa</Text>
@@ -292,9 +357,9 @@ export default function Pedidos() {
             <Text style={styles.modalTitle}>Seleccionar Mesa</Text>
             <ScrollView>
               {mesasDisponibles.map(mesa => (
-                <TouchableOpacity key={mesa.id} style={styles.mesaItem} onPress={() => { setMesaActual(mesa); setProductosTemporales([]); setMostrarSelectorMesa(false); }}>
+                <TouchableOpacity key={mesa.id} style={styles.mesaItem} onPress={() => { setMesaActual(mesa); setMostrarSelectorMesa(false); }}>
                   <Text style={styles.mesaNombre}>{mesa.nombre}</Text>
-                  <Ionicons name={mesa.estado === 'disponible' ? "checkmark-circle" : "time-outline"} size={24} color={mesa.estado === 'disponible' ? "#4CAF50" : "#FF9800"} />
+                  <Ionicons name={mesa.estado === 'disponible' ? "checkmark-circle" : "time-outline"} size={24} color={mesa.estado === 'disponible' ? "#4CAF50" : "#FF9800"} />		  
                 </TouchableOpacity>
               ))}
             </ScrollView>
