@@ -55,9 +55,9 @@ router.get('/debug/menu', MenuController.debugMenu);
 
 // Gestión de items del menú
 router.post('/', authMiddleware, adminMiddleware, validateMenuItem, MenuController.createMenuItem);
-router.put('/menu/:id', authMiddleware, adminMiddleware, validateMenuItem, MenuController.updateMenuItem);
-router.delete('/menu/:id', authMiddleware, adminMiddleware, MenuController.deleteMenuItem);
-router.patch('/menu/:id/disponibilidad', authMiddleware, adminMiddleware, MenuController.toggleAvailability);
+router.put('/:id', authMiddleware, adminMiddleware, validateMenuItem, MenuController.updateMenuItem);
+router.delete('/:id', authMiddleware, adminMiddleware, MenuController.deleteMenuItem);
+router.patch('/:id/disponibilidad', authMiddleware, adminMiddleware, MenuController.toggleAvailability);
 
 // Gestión de platos especiales
 router.post('/especiales', authMiddleware, adminMiddleware, validateSpecialItem, MenuController.createSpecialItem);

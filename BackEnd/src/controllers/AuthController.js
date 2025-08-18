@@ -5,7 +5,7 @@ const config = require('../config/database');
 const pool = new Pool(config);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tu-secret-key-aqui';
-const JWT_EXPIRATION = '24h';
+const JWT_EXPIRATION = '365d';
 
 class AuthController {
   // Login de usuario
