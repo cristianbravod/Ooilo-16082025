@@ -327,21 +327,12 @@ class OrderController {
         });
       }
 
-      const result = await client.query(`
+      // Actualizar la orden principal
+      await client.query(`
         UPDATE ordenes
         SET estado = $1, fecha_modificacion = NOW()
         WHERE id = $2
-        RETURNING *
       `, [estado, id]);
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Orden no encontrada'
-        });
-      }
-
-      const orden = result.rows[0];
 
       // Si se marca como 'preparando' o 'lista', actualizar todos los items
       if (estado === 'preparando' || estado === 'lista') {
@@ -356,13 +347,49 @@ class OrderController {
 
       console.log(`✅ Estado de orden actualizado: ${id} -> ${estado}`);
 
+      // Después de todas las actualizaciones, obtener el estado final de la orden con sus items
+      const finalOrderResult = await client.query(`
+        SELECT
+          o.id,
+          o.mesa,
+          o.total,
+          o.estado,
+          o.notas as observaciones,
+          o.fecha_creacion,
+          o.fecha_modificacion,
+          JSON_AGG(
+            JSON_BUILD_OBJECT(
+              'id', oi.id,
+              'menu_item_id', oi.menu_item_id,
+              'nombre', COALESCE(m.nombre, pe.nombre, 'Item desconocido'),
+              'cantidad', oi.cantidad,
+              'precio_unitario', oi.precio_unitario,
+              'estado', COALESCE(oi.estado_item, 'pendiente')
+            ) ORDER BY oi.id
+          ) FILTER (WHERE oi.id IS NOT NULL) AS items
+        FROM ordenes o
+        LEFT JOIN orden_items oi ON o.id = o.orden_id
+        LEFT JOIN menu_items m ON oi.menu_item_id = m.id
+        LEFT JOIN platos_especiales pe ON oi.plato_especial_id = pe.id
+        WHERE o.id = $1
+        GROUP BY o.id
+      `, [id]);
+
+      if (finalOrderResult.rows.length === 0) {
+        // This should not happen as we just updated it, but as a safeguard
+        return res.status(404).json({ success: false, message: 'Orden no encontrada después de la actualización.' });
+      }
+
+      const finalOrder = {
+        ...finalOrderResult.rows[0],
+        total: parseFloat(finalOrderResult.rows[0].total),
+        items: finalOrderResult.rows[0].items || []
+      };
+
       res.json({
         success: true,
         message: `Orden actualizada a estado: ${estado}`,
-        data: {
-          ...orden,
-          total: parseFloat(orden.total)
-        }
+        data: finalOrder
       });
 
     } catch (error) {
