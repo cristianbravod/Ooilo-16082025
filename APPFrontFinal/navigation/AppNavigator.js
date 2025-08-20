@@ -149,11 +149,8 @@ export default function AppNavigator({
           <Pedidos
             {...props}
             menu={menu}
-            pedidos={pedidos}
-            setPedidos={setPedidos}
             platosEspeciales={platosEspeciales}
-            ventas={ventas}
-            setVentas={setVentas}
+            categorias={categorias}
           />
         )}
       </Tab.Screen>
