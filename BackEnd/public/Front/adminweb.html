@@ -1033,17 +1033,14 @@
                 </div>
                 
                 <nav class="nav-tabs">
-                    <button class="nav-tab active" onclick="showSection('dashboard')" id="dashboard-tab">
-                        📊 Dashboard
-                    </button>
-                    <button class="nav-tab" onclick="showSection('kitchen')" id="kitchen-tab">
+                    <button class="nav-tab active" onclick="showSection('kitchen')" id="kitchen-tab">
                         👨‍🍳 Cocina
                     </button>
-                    <button class="nav-tab" onclick="showSection('admin')" id="admin-tab">
-                        👥 Administración
-                    </button>
                     <button class="nav-tab" onclick="showSection('tables')" id="tables-tab">
-                        🪑 Mesas
+                        🪑 Gestión de Mesas
+                    </button>
+                    <button class="nav-tab" onclick="showSection('reports')" id="reports-tab">
+                        📊 Informes
                     </button>
                 </nav>
 
@@ -1064,39 +1061,8 @@
         </header>
 
         <div class="main-container">
-            <!-- Dashboard Section -->
-            <section id="dashboard" class="content-section active">
-                <div class="dashboard-stats">
-                    <div class="stat-card danger">
-                        <div class="icon">⚠️</div>
-                        <div class="stat-number" id="pending-orders">0</div>
-                        <div class="stat-label">Pedidos Pendientes</div>
-                    </div>
-                    <div class="stat-card warning">
-                        <div class="icon">🔥</div>
-                        <div class="stat-number" id="preparing-orders">0</div>
-                        <div class="stat-label">En Preparación</div>
-                    </div>
-                    <div class="stat-card success">
-                        <div class="icon">✅</div>
-                        <div class="stat-number" id="ready-orders">0</div>
-                        <div class="stat-label">Listos para Entregar</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="icon">💰</div>
-                        <div class="stat-number" id="total-sales">$0</div>
-                        <div class="stat-label">Ventas del Día</div>
-                    </div>
-                </div>
-
-                <h2>📊 Resumen de Órdenes Activas</h2>
-                <div id="dashboard-orders" class="orders-grid">
-                    <!-- Las órdenes se cargarán aquí dinámicamente -->
-                </div>
-            </section>
-
             <!-- Kitchen Section -->
-            <section id="kitchen" class="content-section">
+            <section id="kitchen" class="content-section active">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
                     <h2>👨‍🍳 Panel de Cocina</h2>
                     <div style="display: flex; gap: 1rem; align-items: center;">
@@ -1115,10 +1081,10 @@
                 </div>
             </section>
 
-            <!-- Admin Section -->
-            <section id="admin" class="content-section">
+            <!-- Reports Section -->
+            <section id="reports" class="content-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                    <h2>👥 Panel de Administración</h2>
+                    <h2>📊 Informes y Resumen de Datos</h2>
                     <button class="btn btn-primary" onclick="refreshOrders()">
                         🔄 Actualizar
                     </button>
@@ -1170,7 +1136,7 @@
         let authToken = null;
         
         // Estado del sistema
-        let currentSection = 'dashboard';
+        let currentSection = 'kitchen';
         let autoRefreshInterval = null;
         let orders = [];
         let tables = [];
@@ -1197,10 +1163,10 @@
 
         // Permisos por rol
         const ROLE_PERMISSIONS = {
-            'admin': ['dashboard', 'admin', 'kitchen', 'tables'],
-            'cocina': ['dashboard', 'kitchen'],
-            'chef': ['dashboard', 'kitchen'],
-            'mesero': ['dashboard', 'admin', 'tables']
+            'admin': ['kitchen', 'tables', 'reports'],
+            'cocina': ['kitchen'],
+            'chef': ['kitchen'],
+            'mesero': ['tables']
         };
 
         // ==========================================
@@ -1380,7 +1346,7 @@
             setupRolePermissions();
             
             // Cargar datos iniciales
-            refreshDashboard();
+            showSection(currentSection);
             
             // Auto-refresh para cocina
             if (currentUser.rol === 'cocina' || currentUser.rol === 'chef') {
@@ -1404,9 +1370,9 @@
                 }
             });
             
-            // Si la sección actual no está permitida, ir a dashboard
+            // Si la sección actual no está permitida, ir a la primera sección permitida
             if (!allowedSections.includes(currentSection)) {
-                showSection('dashboard');
+                showSection(allowedSections[0] || 'kitchen');
             }
         }
 
@@ -1679,13 +1645,10 @@
             if (isKitchen) {
                 switch(order.estado) {
                     case 'pendiente':
-                        actions.push(`<button class="btn btn-warning" onclick="startAllItems(${order.id})">🔥 Comenzar Todo</button>`);
+                        actions.push(`<button class="btn btn-warning" onclick="updateOrderStatus(${order.id}, 'preparando')">🔥 Empezar Preparación</button>`);
                         break;
                     case 'preparando':
-                        const allReady = order.items.every(item => item.estado === 'listo');
-                        if (allReady) {
-                            actions.push(`<button class="btn btn-success" onclick="updateOrderStatus(${order.id}, 'lista')">✅ Orden Lista</button>`);
-                        }
+                        actions.push(`<button class="btn btn-success" onclick="updateOrderStatus(${order.id}, 'lista')">✅ Marcar como Lista</button>`);
                         break;
                     case 'lista':
                     case 'listo':
@@ -1712,17 +1675,6 @@
             }
             
             return actions.join('');
-        }
-
-        function startAllItems(orderId) {
-            const order = orders.find(o => o.id === orderId);
-            if (order) {
-                order.items.forEach(item => {
-                    if (item.estado === 'pendiente') {
-                        changeItemStatus(orderId, item.id, 'preparando');
-                    }
-                });
-            }
         }
 
         // ==========================================
@@ -1850,30 +1802,15 @@
             if (!currentUser) return;
             
             switch(section) {
-                case 'dashboard':
-                    refreshDashboard();
-                    break;
                 case 'kitchen':
                     refreshKitchenOrders();
                     break;
-                case 'admin':
+                case 'reports':
                     refreshOrders();
                     break;
                 case 'tables':
                     refreshTables();
                     break;
-            }
-        }
-
-        async function refreshDashboard() {
-            showLoading('dashboard-orders');
-            
-            try {
-                orders = await getOrders();
-                updateDashboardStats();
-                renderOrdersInContainer('dashboard-orders', orders.slice(0, 6), false);
-            } catch (error) {
-                showError('dashboard-orders', 'Error cargando el dashboard');
             }
         }
 
@@ -1949,13 +1886,10 @@
             
             setTimeout(() => {
                 switch(currentSection) {
-                    case 'dashboard':
-                        refreshDashboard();
-                        break;
                     case 'kitchen':
                         refreshKitchenOrders();
                         break;
-                    case 'admin':
+                    case 'reports':
                         refreshOrders();
                         break;
                     case 'tables':
@@ -2030,17 +1964,6 @@
             container.appendChild(orderCard);
         }
 
-        function updateDashboardStats() {
-            const pending = orders.filter(o => o.estado === 'pendiente').length;
-            const preparing = orders.filter(o => o.estado === 'preparando').length;
-            const ready = orders.filter(o => ['lista', 'listo'].includes(o.estado)).length;
-            const totalSales = orders.reduce((sum, order) => sum + (order.total || 0), 0);
-            
-            document.getElementById('pending-orders').textContent = pending;
-            document.getElementById('preparing-orders').textContent = preparing;
-            document.getElementById('ready-orders').textContent = ready;
-            document.getElementById('total-sales').textContent = `$${totalSales.toLocaleString('es-CL')}`;
-        }
 
         // ==========================================
         // AUTO-REFRESH Y UTILIDADES
