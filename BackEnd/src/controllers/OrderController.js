@@ -343,13 +343,15 @@ class OrderController {
 
       const orden = result.rows[0];
 
-      // Si se marca como lista, actualizar todos los items
-      if (estado === 'lista') {
+      // Si se marca como 'preparando' o 'lista', actualizar todos los items
+      if (estado === 'preparando' || estado === 'lista') {
+        const newItemStatus = estado === 'lista' ? 'lista' : 'preparando';
         await client.query(`
           UPDATE orden_items
-          SET estado_item = 'lista'
-          WHERE orden_id = $1
-        `, [id]);
+          SET estado_item = $1
+          WHERE orden_id = $2
+        `, [newItemStatus, id]);
+        console.log(` cascading update for order ${id} to item status ${newItemStatus}`);
       }
 
       console.log(`✅ Estado de orden actualizado: ${id} -> ${estado}`);
