@@ -1655,11 +1655,11 @@
         function getItemActions(orderId, item) {
             switch(item.estado) {
                 case 'pendiente':
-                    return `<button class="item-btn start" onclick="changeItemStatus(${orderId}, ${item.id}, 'preparando')">
+                    return `<button class="item-btn start btn-next-step" onclick="changeItemStatus(${orderId}, ${item.id}, 'preparando')">
                         🔥 Preparar
                     </button>`;
                 case 'preparando':
-                    return `<button class="item-btn finish" onclick="changeItemStatus(${orderId}, ${item.id}, 'listo')">
+                    return `<button class="item-btn finish btn-next-step" onclick="changeItemStatus(${orderId}, ${item.id}, 'listo')">
                         ✅ Listo
                     </button>`;
                 case 'listo':
