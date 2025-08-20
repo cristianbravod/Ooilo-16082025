@@ -528,6 +528,19 @@
             background: #f8f9fa;
             border-radius: var(--border-radius);
             transition: all 0.3s ease;
+            border-left: 5px solid transparent; /* Default transparent border */
+        }
+
+        .order-item.item-status-pendiente {
+            border-left-color: var(--danger-color);
+        }
+
+        .order-item.item-status-preparando {
+            border-left-color: var(--warning-color);
+        }
+
+        .order-item.item-status-listo {
+            border-left-color: var(--success-color);
         }
 
         .order-item:hover {
@@ -570,10 +583,10 @@
         }
 
         .item-status {
-            padding: 0.25rem 0.75rem;
+            padding: 0.3rem 0.8rem;
             border-radius: 15px;
-            font-size: 0.75rem;
-            font-weight: bold;
+            font-size: 0.8rem;
+            font-weight: 700;
             text-transform: uppercase;
         }
 
@@ -658,6 +671,25 @@
 
         .btn:hover {
             transform: translateY(-1px);
+        }
+
+        @keyframes pulse-animation {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4);
+            }
+            70% {
+                transform: scale(1.02);
+                box-shadow: 0 0 10px 15px rgba(33, 150, 243, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(33, 150, 243, 0);
+            }
+        }
+
+        .btn-next-step {
+            animation: pulse-animation 2.5s infinite;
         }
 
         .btn-primary {
@@ -1563,7 +1595,7 @@
                 
                 <div class="order-items">
                     ${order.items.map(item => `
-                        <div class="order-item">
+                        <div class="order-item item-status-${item.estado}">
                             <div class="item-info">
                                 <div class="item-name">${item.nombre}</div>
                                 <div class="item-details">
@@ -1645,14 +1677,14 @@
             if (isKitchen) {
                 switch(order.estado) {
                     case 'pendiente':
-                        actions.push(`<button class="btn btn-warning" onclick="updateOrderStatus(${order.id}, 'preparando')">🔥 Empezar Preparación</button>`);
+                        actions.push(`<button class="btn btn-warning btn-next-step" onclick="updateOrderStatus(${order.id}, 'preparando')">🔥 Empezar Preparación</button>`);
                         break;
                     case 'preparando':
-                        actions.push(`<button class="btn btn-success" onclick="updateOrderStatus(${order.id}, 'lista')">✅ Marcar como Lista</button>`);
+                        actions.push(`<button class="btn btn-success btn-next-step" onclick="updateOrderStatus(${order.id}, 'lista')">✅ Marcar como Lista</button>`);
                         break;
                     case 'lista':
                     case 'listo':
-                        actions.push(`<button class="btn btn-primary" onclick="updateOrderStatus(${order.id}, 'entregada')">🚚 Marcar Entregada</button>`);
+                        actions.push(`<button class="btn btn-primary btn-next-step" onclick="updateOrderStatus(${order.id}, 'entregada')">🚚 Marcar Entregada</button>`);
                         break;
                 }
             } else {
