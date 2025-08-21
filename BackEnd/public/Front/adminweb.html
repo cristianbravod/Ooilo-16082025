@@ -1426,54 +1426,109 @@
         // ==========================================
         
         async function changeItemStatus(orderId, itemId, newStatus) {
+            const orderIndex = orders.findIndex(o => o.id === orderId);
+            if (orderIndex === -1) return;
+
+            const itemIndex = orders[orderIndex].items.findIndex(i => i.id === itemId);
+            if (itemIndex === -1) return;
+
+            // Optimistic update
+            const originalStatus = orders[orderIndex].items[itemIndex].estado;
+            orders[orderIndex].items[itemIndex].estado = newStatus;
+            renderKitchenOrdersFromLocal();
+            showNotification(`Item actualizado a: ${ITEM_STATES[newStatus].label}`, 'info');
+
             try {
-                console.log(`🔄 Actualizando item ${itemId} de orden ${orderId} a: ${newStatus}`);
-                
-                const response = await apiRequest(`/ordenes/${orderId}/items/${itemId}/estado`, {
+                await apiRequest(`/ordenes/${orderId}/items/${itemId}/estado`, {
                     method: 'PATCH',
                     body: JSON.stringify({ estado: newStatus })
                 });
-                
-                if (response && response.success) {
-                    showNotification(`Item actualizado a: ${ITEM_STATES[newStatus].label}`, 'success');
-                    // After changing an item, we need to refresh the whole order data
-                    refreshKitchenOrders();
-                }
-                
+                // On success, we might get back the full order if other things changed (like order status)
+                // For now, a full refresh is safest after an item change.
+                refreshKitchenOrders();
             } catch (error) {
                 console.error('❌ Error actualizando item:', error);
-                showNotification('Error actualizando item', 'error');
+                showNotification('Error sincronizando. Revirtiendo.', 'error');
+                orders[orderIndex].items[itemIndex].estado = originalStatus;
+                renderKitchenOrdersFromLocal();
             }
         }
 
         async function updateOrderStatus(orderId, newStatus) {
+            const orderIndex = orders.findIndex(o => o.id === orderId);
+            if (orderIndex === -1) {
+                console.error(`Error: Orden ${orderId} no encontrada para actualización optimista.`);
+                return;
+            }
+
+            // --- Actualización Optimista ---
+            const originalOrder = JSON.parse(JSON.stringify(orders[orderIndex]));
+            const updatedOrder = orders[orderIndex];
+
+            updatedOrder.estado = newStatus;
+            const newItemStatus = newStatus === 'lista' ? 'listo' : newStatus;
+            updatedOrder.items.forEach(item => {
+                item.estado = newItemStatus;
+            });
+
+            renderKitchenOrdersFromLocal();
+            showNotification(`Orden actualizada a: ${ORDER_STATES[newStatus]?.label || newStatus}`, 'info');
+
             try {
-                console.log(`🔄 Actualizando orden ${orderId} a estado: ${newStatus}`);
-                
+                console.log(`🔄 Enviando actualización de estado al backend para orden ${orderId}...`);
                 const response = await apiRequest(`/ordenes/${orderId}/estado`, {
                     method: 'PATCH',
                     body: JSON.stringify({ estado: newStatus })
                 });
-                
-                if (response && response.success && response.data) {
-                    showNotification(`Orden actualizada a: ${ORDER_STATES[newStatus]?.label || newStatus}`, 'success');
-                    
-                    // Replace the old order with the updated one from the API response
-                    const updatedOrder = normalizeOrder(response.data);
-                    const orderIndex = orders.findIndex(o => o.id === updatedOrder.id);
-                    if (orderIndex !== -1) {
-                        orders[orderIndex] = updatedOrder;
-                    } else {
-                        orders.push(updatedOrder);
-                    }
-
-                    // Re-render the kitchen view with the new local data
+                // Backend now returns the full updated order, so we can replace our local version for full consistency.
+                if(response.success && response.data) {
+                    orders[orderIndex] = normalizeOrder(response.data);
                     renderKitchenOrdersFromLocal();
                 }
-                
+                console.log(`✅ Actualización de backend para orden ${orderId} completada.`);
             } catch (error) {
-                console.error('❌ Error actualizando orden:', error);
-                showNotification('Error actualizando orden', 'error');
+                console.error('❌ Error en la actualización de backend:', error);
+                showNotification('Error sincronizando con el servidor. Revirtiendo cambio.', 'error');
+                orders[orderIndex] = originalOrder;
+                renderKitchenOrdersFromLocal();
+            }
+        }
+
+        function renderKitchenOrdersFromLocal() {
+            const container = document.getElementById('kitchen-orders');
+            container.innerHTML = '';
+
+            const kitchenOrders = orders.filter(o => ['pendiente', 'confirmada', 'preparando', 'lista', 'listo'].includes(o.estado));
+
+            if (kitchenOrders.length === 0) {
+                container.innerHTML = `
+                    <div class="no-orders">
+                        <div class="icon">👨‍🍳</div>
+                        <h3>No hay pedidos activos</h3>
+                        <p>Los nuevos pedidos aparecerán aquí automáticamente</p>
+                        <p style="font-size: 0.9rem; color: #666; margin-top: 1rem;">
+                            ${isConnected ? '🌐 Conectado al servidor' : '⚠️ Sin conexión'}
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            console.log(`✅ Renderizando ${kitchenOrders.length} órdenes de cocina desde datos locales.`);
+            kitchenOrders.sort((a, b) => new Date(a.fecha_creacion) - new Date(b.fecha_creacion));
+            kitchenOrders.forEach(order => renderKitchenOrder(order, container));
+        }
+
+        async function refreshKitchenOrders() {
+            showLoading('kitchen-orders');
+            try {
+                console.log('🍳 Cargando órdenes de cocina desde API...');
+                const kitchenOrders = await getActiveOrders();
+                orders = kitchenOrders; // Actualizar la lista global de órdenes
+                renderKitchenOrdersFromLocal(); // Re-renderizar desde la nueva lista local
+            } catch (error) {
+                console.error('❌ Error cargando órdenes de cocina:', error);
+                showError('kitchen-orders', 'Error cargando pedidos de cocina');
             }
         }
 
@@ -1873,6 +1928,31 @@
             }
 
             console.log(`✅ Renderizando ${kitchenOrders.length} órdenes de cocina desde datos locales.`);
+            kitchenOrders.forEach(order => renderKitchenOrder(order, container));
+        }
+
+        function renderKitchenOrdersFromLocal() {
+            const container = document.getElementById('kitchen-orders');
+            container.innerHTML = '';
+
+            const kitchenOrders = orders.filter(o => ['pendiente', 'confirmada', 'preparando', 'lista', 'listo'].includes(o.estado));
+
+            if (kitchenOrders.length === 0) {
+                container.innerHTML = `
+                    <div class="no-orders">
+                        <div class="icon">👨‍🍳</div>
+                        <h3>No hay pedidos activos</h3>
+                        <p>Los nuevos pedidos aparecerán aquí automáticamente</p>
+                        <p style="font-size: 0.9rem; color: #666; margin-top: 1rem;">
+                            ${isConnected ? '🌐 Conectado al servidor' : '⚠️ Sin conexión'}
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            console.log(`✅ Renderizando ${kitchenOrders.length} órdenes de cocina desde datos locales.`);
+            kitchenOrders.sort((a, b) => new Date(a.fecha_creacion) - new Date(b.fecha_creacion));
             kitchenOrders.forEach(order => renderKitchenOrder(order, container));
         }
 

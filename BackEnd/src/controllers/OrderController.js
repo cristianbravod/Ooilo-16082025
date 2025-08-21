@@ -368,7 +368,7 @@ class OrderController {
             ) ORDER BY oi.id
           ) FILTER (WHERE oi.id IS NOT NULL) AS items
         FROM ordenes o
-        LEFT JOIN orden_items oi ON o.id = o.orden_id
+        LEFT JOIN orden_items oi ON o.id = oi.orden_id
         LEFT JOIN menu_items m ON oi.menu_item_id = m.id
         LEFT JOIN platos_especiales pe ON oi.plato_especial_id = pe.id
         WHERE o.id = $1
@@ -385,6 +385,8 @@ class OrderController {
         total: parseFloat(finalOrderResult.rows[0].total),
         items: finalOrderResult.rows[0].items || []
       };
+
+      console.log("DEBUG: Final order object being sent to frontend:", JSON.stringify(finalOrder, null, 2));
 
       res.json({
         success: true,
