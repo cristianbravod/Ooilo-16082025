@@ -15,6 +15,7 @@ const orderRoutes = require('./src/routes/orderRoutes');
 const mesasRoutes = require('./src/routes/mesas');
 const platosEspecialesRoutes = require('./src/routes/platos-especiales');
 const uploadRoutes = require('./src/routes/upload');
+const reportRoutes = require('./src/routes/reportRoutes');
 
 // ✅ IMPORTAR CONTROLADOR PARA RUTAS DIRECTAS
 const MenuController = require('./src/controllers/MenuController');
@@ -217,6 +218,10 @@ console.log('✅ Mesas routes registradas en /api/mesas');
 // ✅ RUTAS DE UPLOAD
 app.use('/api/upload', uploadRoutes);
 console.log('✅ Upload routes registradas en /api/upload');
+
+// ✅ RUTAS DE REPORTES
+app.use('/api/reportes', reportRoutes);
+console.log('✅ Report routes registradas en /api/reportes');
 
 // ==========================================
 // RUTAS ADICIONALES IMPORTANTES

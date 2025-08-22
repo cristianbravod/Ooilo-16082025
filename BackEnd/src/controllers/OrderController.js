@@ -683,6 +683,64 @@ class OrderController {
   // MÉTODOS ADICIONALES
   // ==========================================
 
+  async getOrderStats(req, res) {
+    const client = await pool.connect();
+    try {
+        const { fecha_inicio, fecha_fin } = req.query;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).json({ success: false, message: 'Fechas de inicio y fin son requeridas.' });
+        }
+
+        const queries = [
+            // Total de órdenes
+            `SELECT COUNT(*) as total_ordenes FROM ordenes WHERE DATE(fecha_creacion) BETWEEN $1 AND $2`,
+            // Ingresos totales
+            `SELECT SUM(total) as ingresos_totales FROM ordenes WHERE estado = 'entregada' AND DATE(fecha_creacion) BETWEEN $1 AND $2`,
+            // Items más vendidos
+            `SELECT m.nombre, SUM(oi.cantidad) as total_vendido, SUM(oi.cantidad * oi.precio_unitario) as ingresos_producto
+             FROM orden_items oi
+             JOIN menu_items m ON oi.menu_item_id = m.id
+             JOIN ordenes o ON oi.orden_id = o.id
+             WHERE o.estado = 'entregada' AND DATE(o.fecha_creacion) BETWEEN $1 AND $2
+             GROUP BY m.id, m.nombre
+             ORDER BY total_vendido DESC
+             LIMIT 5`
+        ];
+
+        const [
+            totalOrdersResult,
+            totalSalesResult,
+            topProductsResult
+        ] = await Promise.all(
+            queries.map(query => client.query(query, [fecha_inicio, fecha_fin]))
+        );
+
+        res.json({
+            success: true,
+            data: {
+                total_ordenes: parseInt(totalOrdersResult.rows[0].total_ordenes || 0),
+                ingresos_totales: parseFloat(totalSalesResult.rows[0].ingresos_totales || 0),
+                productos_mas_vendidos: topProductsResult.rows.map(p => ({
+                    ...p,
+                    total_vendido: parseInt(p.total_vendido),
+                    ingresos_producto: parseFloat(p.ingresos_producto)
+                }))
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error obteniendo estadísticas:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error obteniendo estadísticas',
+            error: error.message
+        });
+    } finally {
+        client.release();
+    }
+  }
+
   async getAllOrders(req, res) {
     const client = await pool.connect();
     try {
