@@ -1115,15 +1115,53 @@
 
             <!-- Reports Section -->
             <section id="reports" class="content-section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                    <h2>📊 Informes y Resumen de Datos</h2>
-                    <button class="btn btn-primary" onclick="refreshOrders()">
-                        🔄 Actualizar
+                <h2>📊 Informes de Administrador</h2>
+
+                <!-- Filtros de Fecha -->
+                <div class="report-filters" style="background: white; padding: 1.5rem; border-radius: var(--border-radius); box-shadow: var(--shadow); margin-bottom: 2rem; display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="report-start-date" class="form-label">Desde</label>
+                        <input type="date" id="report-start-date" class="form-input">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="report-end-date" class="form-label">Hasta</label>
+                        <input type="date" id="report-end-date" class="form-input">
+                    </div>
+                    <button class="btn btn-primary" onclick="generateAdminReport()">
+                        🔍 Generar Reporte
                     </button>
                 </div>
-                
-                <div id="admin-orders" class="orders-grid">
-                    <!-- Las órdenes se cargarán aquí dinámicamente -->
+
+                <!-- Resumen General -->
+                <div id="report-summary" class="dashboard-stats" style="margin-bottom: 2rem;">
+                    <!-- Las tarjetas de resumen se cargarán aquí -->
+                    <div class="stat-card">
+                        <div class="stat-number" id="summary-total-sales">$0</div>
+                        <div class="stat-label">Suma de Ventas Totales</div>
+                        <div class="icon">💰</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="summary-total-orders">0</div>
+                        <div class="stat-label">Cantidad de Pedidos Totales</div>
+                        <div class="icon">🧾</div>
+                    </div>
+                </div>
+
+                <!-- Productos más vendidos -->
+                <h3>📈 Productos Más Vendidos</h3>
+                <div id="report-products" style="background: white; padding: 1.5rem; border-radius: var(--border-radius); box-shadow: var(--shadow); margin-top: 1rem;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid #eee;">
+                                <th style="text-align: left; padding: 1rem;">Producto</th>
+                                <th style="text-align: right; padding: 1rem;">Cantidad Vendida</th>
+                                <th style="text-align: right; padding: 1rem;">Ventas Totales del Producto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="products-table-body">
+                            <!-- Los productos se cargarán aquí -->
+                        </tbody>
+                    </table>
                 </div>
             </section>
 
@@ -1640,7 +1678,7 @@
                             Hace ${timeDiff} min 
                             ${timeDiff > 30 ? '<span class="kitchen-timer">⚠️ URGENTE</span>' : ''}
                         </div>
-                        <div class="order-total">$${order.total?.toLocaleString('es-CL') || '0'}</div>
+                        ${currentUser.rol !== 'cocina' ? `<div class="order-total">$${order.total?.toLocaleString('es-CL') || '0'}</div>` : ''}
                     </div>
                     <div>
                         <div class="order-status-badge status-${order.estado}">
@@ -1661,7 +1699,7 @@
                                 <div class="item-name">${item.nombre}</div>
                                 <div class="item-details">
                                     <span class="item-quantity">${item.cantidad}x</span>
-                                    <span class="item-price">$${(item.precio * item.cantidad).toLocaleString('es-CL')}</span>
+                                    ${currentUser.rol !== 'cocina' ? `<span class="item-price">$${(item.precio * item.cantidad).toLocaleString('es-CL')}</span>` : ''}
                                     <span class="item-status status-${item.estado}">${(ITEM_STATES[item.estado] || { label: 'Desconocido' }).label}</span>
                                 </div>
                                 ${item.observaciones ? `
@@ -2208,6 +2246,76 @@
                 }
             }
         }
+
+        // ==========================================
+        // LÓGICA DE REPORTES DE ADMINISTRADOR
+        // ==========================================
+
+        function formatCurrency(value) {
+            return `$${(value || 0).toLocaleString('es-CL')}`;
+        }
+
+        async function generateAdminReport() {
+            const startDate = document.getElementById('report-start-date').value;
+            const endDate = document.getElementById('report-end-date').value;
+
+            if (!startDate || !endDate) {
+                showNotification('Por favor, selecciona una fecha de inicio y fin', 'warning');
+                return;
+            }
+
+            console.log(`📊 Generando reporte desde ${startDate} hasta ${endDate}`);
+            showLoading('report-summary');
+            showLoading('products-table-body');
+
+            try {
+                // Construir query string
+                const query = `?fecha_inicio=${startDate}&fecha_fin=${endDate}`;
+
+                // Obtener datos de ventas y productos en paralelo
+                const [salesData, productsData] = await Promise.all([
+                    apiRequest(`/reportes/ventas${query}`),
+                    apiRequest(`/reportes/productos-populares${query}`)
+                ]);
+
+                // Renderizar resumen
+                const summaryContainer = document.getElementById('report-summary');
+                if (salesData && salesData.estadisticas) {
+                    document.getElementById('summary-total-sales').textContent = formatCurrency(salesData.estadisticas.total_ventas);
+                    document.getElementById('summary-total-orders').textContent = salesData.estadisticas.numero_ordenes;
+                    summaryContainer.style.display = 'grid'; // Asegurarse de que sea visible
+                } else {
+                     summaryContainer.innerHTML = '<p>No se encontraron datos de ventas.</p>';
+                }
+
+
+                // Renderizar productos
+                const productsBody = document.getElementById('products-table-body');
+                productsBody.innerHTML = ''; // Limpiar
+                if (productsData && productsData.productos && productsData.productos.length > 0) {
+                    productsData.productos.forEach(product => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td style="text-align: left; padding: 1rem;">${product.nombre}</td>
+                            <td style="text-align: right; padding: 1rem;">${product.total_vendido}</td>
+                            <td style="text-align: right; padding: 1rem;">${formatCurrency(product.ingresos_totales)}</td>
+                        `;
+                        productsBody.appendChild(row);
+                    });
+                } else {
+                    productsBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 2rem;">No se encontraron productos vendidos en este período.</td></tr>';
+                }
+
+                showNotification('Reporte generado exitosamente', 'success');
+
+            } catch (error) {
+                console.error('❌ Error generando reporte:', error);
+                showNotification('Error al generar el reporte', 'error');
+                document.getElementById('report-summary').innerHTML = '<p>Error al cargar resumen.</p>';
+                document.getElementById('products-table-body').innerHTML = '<tr><td colspan="3">Error al cargar productos.</td></tr>';
+            }
+        }
+
 
         // ==========================================
         // MANEJO DEL FORMULARIO DE LOGIN

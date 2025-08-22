@@ -15,7 +15,7 @@ const orderRoutes = require('./src/routes/orderRoutes');
 const mesasRoutes = require('./src/routes/mesas');
 const platosEspecialesRoutes = require('./src/routes/platos-especiales');
 const uploadRoutes = require('./src/routes/upload');
-const reportRoutes = require('./src/routes/reportRoutes');
+const reportRoutes = require('./src/routes/reports');
 
 // ✅ IMPORTAR CONTROLADOR PARA RUTAS DIRECTAS
 const MenuController = require('./src/controllers/MenuController');
