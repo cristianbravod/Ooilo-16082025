@@ -1,80 +1,89 @@
-// BackEnd/src/middleware/auth.js - VERSIÓN CORREGIDA
 const jwt = require('jsonwebtoken');
-const config = require('../config/database');
+const JWT_SECRET = process.env.JWT_SECRET || 'tu-secret-key-aqui';
 
-// Middleware principal de autenticación
+// Middleware para verificar la autenticación
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    // Si no hay token, adjuntamos un usuario "invitado" para rutas opcionales
-    // y para evitar que el sistema falle si el token no es requerido.
-    req.user = { rol: 'invitado' };
-    return next();
+    return res.status(401).json({
+      success: false,
+      message: 'Acceso denegado. No se proporcionó token.'
+    });
   }
 
   const token = authHeader.split(' ')[1];
 
   try {
-    // Usamos el secreto del entorno o el de la configuración
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwtSecret);
-    req.user = decoded; // Adjunta el payload del token (ej: { id, rol, nombre })
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = {
+      id: decoded.userId,
+      email: decoded.email,
+      rol: decoded.rol
+    };
     next();
   } catch (error) {
-    console.error('❌ Token inválido o expirado:', error.message);
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Token no válido o expirado. Por favor, inicia sesión de nuevo.',
-      code: 'TOKEN_INVALID'
+    console.error('Error de autenticación:', error.message);
+    return res.status(401).json({
+      success: false,
+      message: 'Token inválido o expirado.'
     });
   }
 };
 
 // Middleware para verificar si el usuario es administrador
 const adminMiddleware = (req, res, next) => {
-  // Se asume que authMiddleware ya se ejecutó
   if (req.user && req.user.rol === 'admin') {
     next();
   } else {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Acceso denegado. Se requiere rol de administrador.',
-      code: 'FORBIDDEN_ADMIN_REQUIRED'
+    return res.status(403).json({
+      success: false,
+      message: 'Acceso denegado. Se requiere rol de administrador.'
     });
   }
 };
 
-// ✅ FUNCIÓN AÑADIDA Y CORREGIDA
-// Middleware para verificar múltiples roles. Es una función de orden superior.
-const roleMiddleware = (allowedRoles) => {
-  // Devuelve el middleware real que Express usará
+// Middleware para verificar roles específicos
+const roleMiddleware = (roles) => {
   return (req, res, next) => {
-    // authMiddleware debe haber sido llamado antes, por lo que req.user debería existir.
-    if (!req.user || !req.user.rol) {
-      return res.status(401).json({
-        success: false,
-        message: 'Autenticación requerida. No se encontró información de usuario.',
-        code: 'AUTH_REQUIRED'
-      });
-    }
-
-    const { rol } = req.user;
-
-    // Comprueba si el rol del usuario está en la lista de roles permitidos
-    if (allowedRoles.includes(rol)) {
-      next(); // El rol del usuario está permitido, continuar.
+    if (req.user && roles.includes(req.user.rol)) {
+      next();
     } else {
       return res.status(403).json({
         success: false,
-        message: `Acceso denegado. Tu rol ('${rol}') no tiene permiso. Se requiere: ${allowedRoles.join(', ')}.`,
-        code: 'FORBIDDEN_ROLE_MISMATCH'
+        message: `Acceso denegado. Se requiere uno de los siguientes roles: ${roles.join(', ')}.`
       });
     }
   };
 };
 
+
+// Middleware para autenticación opcional
+const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      req.user = {
+        id: decoded.userId,
+        email: decoded.email,
+        rol: decoded.rol
+      };
+    } catch (error) {
+      // Ignorar token inválido, simplemente no se establece req.user
+      req.user = null;
+    }
+  }
+  
+  next();
+};
+
+
 module.exports = {
   authMiddleware,
   adminMiddleware,
-  roleMiddleware, // ✅ EXPORTACIÓN AÑADIDA
+  roleMiddleware,
+  optionalAuth
 };
