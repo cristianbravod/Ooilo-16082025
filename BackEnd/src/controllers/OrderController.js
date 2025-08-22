@@ -429,49 +429,46 @@ class OrderController {
       }
 
       // Actualizar estado del item
-      const result = await client.query(`
+      await client.query(`
         UPDATE orden_items
         SET estado_item = $1
         WHERE id = $2 AND orden_id = $3
-        RETURNING *
       `, [estado, itemId, ordenId]);
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Item no encontrado'
-        });
-      }
-
-      // Verificar si todos los items están listos para actualizar la orden
+      // Verificar si todos los items han alcanzado un estado uniforme
       const checkResult = await client.query(`
-        SELECT COUNT(*) as total,
-               COUNT(CASE WHEN estado_item = 'lista' THEN 1 END) as listos
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN estado_item = 'preparando' THEN 1 END) as preparando,
+          COUNT(CASE WHEN estado_item = 'lista' THEN 1 END) as listos
         FROM orden_items
         WHERE orden_id = $1
       `, [ordenId]);
 
-      const { total, listos } = checkResult.rows[0];
-      console.log(`DEBUG: Total items: ${total}, Items listos: ${listos}`);
+      const { total, preparando, listos } = checkResult.rows[0];
+      console.log(`DEBUG: Total: ${total}, Preparando: ${preparando}, Listos: ${listos}`);
 
-      // Si todos los items están listos, actualizar la orden
-      if (parseInt(total) === parseInt(listos)) {
+      let newOrderStatus = null;
+      if (parseInt(total) === parseInt(preparando)) {
+        newOrderStatus = 'preparando';
+      } else if (parseInt(total) === parseInt(listos)) {
+        newOrderStatus = 'lista';
+      }
+
+      if (newOrderStatus) {
         await client.query(`
           UPDATE ordenes
-          SET estado = 'lista', fecha_modificacion = NOW()
-          WHERE id = $1
-        `, [ordenId]);
-
-        console.log(`🎯 Orden ${ordenId} marcada como LISTA (todos los items completados)`);
+          SET estado = $1, fecha_modificacion = NOW()
+          WHERE id = $2
+        `, [newOrderStatus, ordenId]);
+        console.log(`🎯 Orden ${ordenId} marcada como ${newOrderStatus.toUpperCase()} (todos los items completados)`);
       }
 
       console.log(`✅ Estado de item actualizado: ${itemId} -> ${estado}`);
 
       res.json({
         success: true,
-        message: `Item actualizado a estado: ${estado}`,
-        data: result.rows[0],
-        orden_completada: parseInt(total) === parseInt(listos)
+        message: `Item actualizado a estado: ${estado}`
       });
 
     } catch (error) {
