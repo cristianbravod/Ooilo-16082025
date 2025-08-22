@@ -327,40 +327,71 @@ class OrderController {
         });
       }
 
-      const result = await client.query(`
+      // Actualizar la orden principal
+      await client.query(`
         UPDATE ordenes
         SET estado = $1, fecha_modificacion = NOW()
         WHERE id = $2
-        RETURNING *
       `, [estado, id]);
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Orden no encontrada'
-        });
-      }
-
-      const orden = result.rows[0];
-
-      // Si se marca como lista, actualizar todos los items
-      if (estado === 'lista') {
+      // Si se marca como 'preparando' o 'lista', actualizar todos los items
+      if (estado === 'preparando' || estado === 'lista') {
+        const newItemStatus = estado === 'lista' ? 'lista' : 'preparando';
         await client.query(`
           UPDATE orden_items
-          SET estado_item = 'lista'
-          WHERE orden_id = $1
-        `, [id]);
+          SET estado_item = $1
+          WHERE orden_id = $2
+        `, [newItemStatus, id]);
+        console.log(` cascading update for order ${id} to item status ${newItemStatus}`);
       }
 
       console.log(`✅ Estado de orden actualizado: ${id} -> ${estado}`);
 
+      // Después de todas las actualizaciones, obtener el estado final de la orden con sus items
+      const finalOrderResult = await client.query(`
+        SELECT
+          o.id,
+          o.mesa,
+          o.total,
+          o.estado,
+          o.notas as observaciones,
+          o.fecha_creacion,
+          o.fecha_modificacion,
+          JSON_AGG(
+            JSON_BUILD_OBJECT(
+              'id', oi.id,
+              'menu_item_id', oi.menu_item_id,
+              'nombre', COALESCE(m.nombre, pe.nombre, 'Item desconocido'),
+              'cantidad', oi.cantidad,
+              'precio_unitario', oi.precio_unitario,
+              'estado', COALESCE(oi.estado_item, 'pendiente')
+            ) ORDER BY oi.id
+          ) FILTER (WHERE oi.id IS NOT NULL) AS items
+        FROM ordenes o
+        LEFT JOIN orden_items oi ON o.id = oi.orden_id
+        LEFT JOIN menu_items m ON oi.menu_item_id = m.id
+        LEFT JOIN platos_especiales pe ON oi.plato_especial_id = pe.id
+        WHERE o.id = $1
+        GROUP BY o.id
+      `, [id]);
+
+      if (finalOrderResult.rows.length === 0) {
+        // This should not happen as we just updated it, but as a safeguard
+        return res.status(404).json({ success: false, message: 'Orden no encontrada después de la actualización.' });
+      }
+
+      const finalOrder = {
+        ...finalOrderResult.rows[0],
+        total: parseFloat(finalOrderResult.rows[0].total),
+        items: finalOrderResult.rows[0].items || []
+      };
+      
+      console.log("DEBUG: Final order object being sent to frontend:", JSON.stringify(finalOrder, null, 2));
+
       res.json({
         success: true,
         message: `Orden actualizada a estado: ${estado}`,
-        data: {
-          ...orden,
-          total: parseFloat(orden.total)
-        }
+        data: finalOrder
       });
 
     } catch (error) {
@@ -398,49 +429,46 @@ class OrderController {
       }
 
       // Actualizar estado del item
-      const result = await client.query(`
+      await client.query(`
         UPDATE orden_items
         SET estado_item = $1
         WHERE id = $2 AND orden_id = $3
-        RETURNING *
       `, [estado, itemId, ordenId]);
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Item no encontrado'
-        });
-      }
-
-      // Verificar si todos los items están listos para actualizar la orden
+      // Verificar si todos los items han alcanzado un estado uniforme
       const checkResult = await client.query(`
-        SELECT COUNT(*) as total,
-               COUNT(CASE WHEN estado_item = 'lista' THEN 1 END) as listos
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN estado_item = 'preparando' THEN 1 END) as preparando,
+          COUNT(CASE WHEN estado_item = 'lista' THEN 1 END) as listos
         FROM orden_items
         WHERE orden_id = $1
       `, [ordenId]);
 
-      const { total, listos } = checkResult.rows[0];
-      console.log(`DEBUG: Total items: ${total}, Items listos: ${listos}`);
+      const { total, preparando, listos } = checkResult.rows[0];
+      console.log(`DEBUG: Total: ${total}, Preparando: ${preparando}, Listos: ${listos}`);
 
-      // Si todos los items están listos, actualizar la orden
-      if (parseInt(total) === parseInt(listos)) {
+      let newOrderStatus = null;
+      if (parseInt(total) === parseInt(preparando)) {
+        newOrderStatus = 'preparando';
+      } else if (parseInt(total) === parseInt(listos)) {
+        newOrderStatus = 'lista';
+      }
+
+      if (newOrderStatus) {
         await client.query(`
           UPDATE ordenes
-          SET estado = 'lista', fecha_modificacion = NOW()
-          WHERE id = $1
-        `, [ordenId]);
-
-        console.log(`🎯 Orden ${ordenId} marcada como LISTA (todos los items completados)`);
+          SET estado = $1, fecha_modificacion = NOW()
+          WHERE id = $2
+        `, [newOrderStatus, ordenId]);
+        console.log(`🎯 Orden ${ordenId} marcada como ${newOrderStatus.toUpperCase()} (todos los items completados)`);
       }
 
       console.log(`✅ Estado de item actualizado: ${itemId} -> ${estado}`);
 
       res.json({
         success: true,
-        message: `Item actualizado a estado: ${estado}`,
-        data: result.rows[0],
-        orden_completada: parseInt(total) === parseInt(listos)
+        message: `Item actualizado a estado: ${estado}`
       });
 
     } catch (error) {
@@ -654,6 +682,64 @@ class OrderController {
   // ==========================================
   // MÉTODOS ADICIONALES
   // ==========================================
+
+  async getOrderStats(req, res) {
+    const client = await pool.connect();
+    try {
+        const { fecha_inicio, fecha_fin } = req.query;
+
+        if (!fecha_inicio || !fecha_fin) {
+            return res.status(400).json({ success: false, message: 'Fechas de inicio y fin son requeridas.' });
+        }
+
+        const queries = [
+            // Total de órdenes
+            `SELECT COUNT(*) as total_ordenes FROM ordenes WHERE DATE(fecha_creacion) BETWEEN $1 AND $2`,
+            // Ingresos totales
+            `SELECT SUM(total) as ingresos_totales FROM ordenes WHERE estado = 'entregada' AND DATE(fecha_creacion) BETWEEN $1 AND $2`,
+            // Items más vendidos
+            `SELECT m.nombre, SUM(oi.cantidad) as total_vendido, SUM(oi.cantidad * oi.precio_unitario) as ingresos_producto
+             FROM orden_items oi
+             JOIN menu_items m ON oi.menu_item_id = m.id
+             JOIN ordenes o ON oi.orden_id = o.id
+             WHERE o.estado = 'entregada' AND DATE(o.fecha_creacion) BETWEEN $1 AND $2
+             GROUP BY m.id, m.nombre
+             ORDER BY total_vendido DESC
+             LIMIT 5`
+        ];
+
+        const [
+            totalOrdersResult,
+            totalSalesResult,
+            topProductsResult
+        ] = await Promise.all(
+            queries.map(query => client.query(query, [fecha_inicio, fecha_fin]))
+        );
+
+        res.json({
+            success: true,
+            data: {
+                total_ordenes: parseInt(totalOrdersResult.rows[0].total_ordenes || 0),
+                ingresos_totales: parseFloat(totalSalesResult.rows[0].ingresos_totales || 0),
+                productos_mas_vendidos: topProductsResult.rows.map(p => ({
+                    ...p,
+                    total_vendido: parseInt(p.total_vendido),
+                    ingresos_producto: parseFloat(p.ingresos_producto)
+                }))
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error obteniendo estadísticas:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error obteniendo estadísticas',
+            error: error.message
+        });
+    } finally {
+        client.release();
+    }
+  }
 
   async getAllOrders(req, res) {
     const client = await pool.connect();
